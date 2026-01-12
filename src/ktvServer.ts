@@ -92,8 +92,8 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         const pendingSongs = allSongs.filter(s => s.state !== 'sung');
 
         // 仅对未唱歌曲进行 Fisher-Yates Shuffle
-        for (let i = pendingSongs.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
+        for (let i = pendingSongs.length - 1; i > 1; i--) {
+            const j = Math.floor(Math.random() * i) + 1;
             [pendingSongs[i], pendingSongs[j]] = [pendingSongs[j], pendingSongs[i]];
         }
 
