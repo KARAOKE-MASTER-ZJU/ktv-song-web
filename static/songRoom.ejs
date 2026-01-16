@@ -904,54 +904,7 @@
                 reader.readAsText(file);
             };
 
-            const exportFavorites = () => {
-                const dataStr = JSON.stringify(favorites.value, null, 2);
-                const blob = new Blob([dataStr], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `ktv_favorites_${new Date().toISOString().slice(0, 10)}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-            };
-
-            const handleImportFile = (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const imported = JSON.parse(e.target.result);
-                        if (Array.isArray(imported)) {
-                            const currentUrls = new Set(favorites.value.map(f => f.url));
-                            const newItems = imported.filter(item => 
-                                item.title && item.url && !currentUrls.has(item.url)
-                            ).map(item => ({
-                                id: 'fav-' + Math.random().toString(36).slice(2, 11),
-                                title: item.title,
-                                url: item.url
-                            }));
-                            
-                            if (newItems.length > 0) {
-                                favorites.value = [...favorites.value, ...newItems];
-                                alert(`成功导入 ${newItems.length} 首歌曲`);
-                            } else {
-                                alert('没有发现新的歌曲或文件格式不正确');
-                            }
-                        } else {
-                            alert('无效的 JSON 格式：应为数组');
-                        }
-                    } catch (err) {
-                        console.error(err);
-                        alert('解析 JSON 失败');
-                    }
-                    event.target.value = '';
-                };
-                reader.readAsText(file);
-            };
+            
 
             async function getHash(songs) {
                 if (!songs || songs.length === 0) return "EMPTY_LIST_HASH";
