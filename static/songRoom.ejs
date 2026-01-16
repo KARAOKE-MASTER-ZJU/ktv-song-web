@@ -149,7 +149,7 @@
             border-width: 0;
         }
 
-        .song-card:hover .font-bold {
+        .song-card:hover .flex-1 .font-bold {
             color: #4f46e5; /* indigo-600 */
             text-decoration: underline;
         }
@@ -201,12 +201,18 @@
 <body class="bg-slate-50 min-h-screen p-4 sm:p-8 text-slate-900">
 <div id="app" class="max-w-md mx-auto" v-cloak>
     <header class="mb-6 flex justify-between items-start">
-        <div>
+        <div @click="backHome()" class="cursor-pointer group">
             <h1 class="text-3xl font-black text-indigo-600">KTV<br/>Queue</h1>
             <p class="text-slate-400">房间ID: <%= roomId %></p>
         </div>
         <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
+                <button @click="hostMode = !hostMode"
+                        :class="['px-3 py-2 rounded-xl border transition text-[10px] font-black flex items-center gap-1.5',
+                         hostMode ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400']">
+                    <span :class="['w-1.5 h-1.5 rounded-full', hostMode ? 'bg-green-400 animate-pulse' : 'bg-slate-300']"></span>
+                    主机模式 {{ hostMode ? 'ON' : 'OFF' }}
+                </button>
                 <button @click="showFavoritesModal = true"
                         class="px-4 py-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-600 text-xs font-bold hover:text-indigo-600 transition flex items-center gap-1"
                         >
@@ -215,14 +221,14 @@
                     </svg>
                     收藏
                 </button>
-                <button @click="nextSong"
+<!--                <button @click="nextSong"
                         class="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition flex items-center gap-1">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="5 4 15 12 5 20 5 4"></polygon>
                         <line x1="19" y1="5" x2="19" y2="19"></line>
                     </svg>
                     下一首
-                </button>
+                </button>-->
                 <button @click="showSettings = true"
                         class="p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500 hover:text-indigo-600 transition">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -237,6 +243,37 @@
             </div>
         </div>
     </header>
+    <div v-if="historyList.length > 0" class="mb-6">
+        <div class="flex items-center justify-between mb-2 px-1">
+        <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="relative flex h-2 w-2">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+            </span>
+            正在播放
+        </span>
+        </div>
+        <div @click="goToLink(historyList[historyList.length - 1])"
+             class="song-card bg-indigo-50 border border-indigo-100 p-4 rounded-3xl flex items-center group cursor-pointer transition-all active:scale-95">
+            <div class="flex-1 min-w-0 pr-4">
+                <div class="text-sm font-bold text-slate-700 truncate leading-tight group-hover:text-indigo-600 transition">
+                    {{ historyList[historyList.length - 1].title }}
+                </div>
+                <div class="flex items-center gap-1.5 mt-1.5">
+                <span v-if="historyList[historyList.length - 1].addedBy" class="shrink-0 text-[9px] px-1.5 py-0.5 bg-white text-indigo-500 rounded font-bold border border-indigo-100">
+                    {{ historyList[historyList.length - 1].addedBy }}
+                </span>
+                    <div class="text-[10px] text-slate-400 truncate opacity-70">{{ historyList[historyList.length - 1].url }}</div>
+                </div>
+            </div>
+<!--            <div class="flex items-center">
+                <button @click.stop="undoSung(historyList[historyList.length - 1])"
+                        class="p-2.5 bg-white text-slate-400 hover:text-indigo-600 rounded-2xl transition border border-indigo-50 shadow-sm" title="重唱">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M3 10h10a8 8 0 0 1 8 8v2M3 10l6-6M3 10l6 6"/></svg>
+                </button>
+            </div>-->
+        </div>
+    </div>
 
     <!-- 切换按钮 -->
     <div class="mb-6 flex p-1 bg-slate-100 rounded-2xl relative">
@@ -251,7 +288,7 @@
         <button @click="activeTab = 'history'"
                 :class="['relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-200',
                          activeTab === 'history' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
-            已唱 ({{ historyList.length }})
+            已唱 ({{ historyList.length === 0 ? 0 : historyList.length - 1 }})
         </button>
     </div>
 
@@ -339,7 +376,7 @@
 
     <!-- 已唱列表 -->
     <div v-show="activeTab === 'history'">
-        <div v-for="element in historyList" :key="element.id"
+        <div v-for="element in historyList.slice(0, -1).reverse()" :key="element.id"
              class="song-card bg-slate-50/50 mb-2 px-5 py-3 rounded-2xl border border-slate-200 flex items-center group opacity-90">
             <div class="flex-1 min-w-0" @click="goToLink(element)">
                 <div class="text-sm font-bold text-slate-500 truncate group-hover:text-indigo-600 transition">
@@ -370,7 +407,17 @@
                 </svg>
             </button>
 
-            <div class="text-[10px] font-bold text-slate-300 bg-slate-100 px-2 py-1 rounded-lg">已唱</div>
+            <button @click="reAdd(element)"
+                    class="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg active:bg-indigo-600 active:text-white transition-colors group">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span class="text-[10px] font-bold">再唱</span>
+            </button>
+        </div>
+        <div v-if="historyList.length <= 1" class="text-center py-20 text-slate-300 text-sm">
+            暂无更多历史记录
         </div>
     </div>
 
@@ -689,6 +736,15 @@
             </svg>
         </button>
 
+        <button @click="historyList.length > 0 && undoSung(historyList[historyList.length - 1])"
+                :disabled="historyList.length === 0"
+                class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90 disabled:opacity-20">
+            <svg class="transform scale-x-[-1]" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                <line x1="19" y1="5" x2="19" y2="19"></line>
+            </svg>
+        </button>
+
         <div class="flex flex-col items-center">
             <button @click="showAddModal = true"
                     class="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-xl shadow-indigo-200 flex items-center justify-center -translate-y-5 border-4 border-white active:scale-95 transition-transform">
@@ -696,10 +752,19 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                 </svg>
             </button>
-            <a href="https://github.com/StarFreedomX/ktv-song-web" target="_blank" class="-mt-3 text-[10px] text-slate-300 hover:text-indigo-400 transition-colors font-medium">
+<!--            <a href="https://github.com/StarFreedomX/ktv-song-web" target="_blank" class="-mt-3 text-[10px] text-slate-300 hover:text-indigo-400 transition-colors font-medium">
                 GitHub
-            </a>
+            </a>-->
         </div>
+
+        <button @click="nextSong"
+                :disabled="queueList.length === 0"
+                class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90 disabled:opacity-20">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                <line x1="19" y1="5" x2="19" y2="19"></line>
+            </svg>
+        </button>
 
         <button @click="showShuffleConfirm = true" class="p-3 text-slate-400 hover:text-orange-500 transition active:scale-90">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
@@ -778,14 +843,15 @@
             const isRefreshing = ref(false);
             const jumpMode = ref(localStorage.getItem('ktv_jump_mode') || 'web');
             const autoJump = ref(localStorage.getItem('ktv_auto_jump') === 'true');
+            const hostMode = ref(localStorage.getItem('ktv_host_mode') === 'true');
             const commitApiUrl = "api/songOperation"
             const loadSongListUrl = "api/songListInfo"
 
             watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
             watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
             watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
+            watch(hostMode, (val) => localStorage.setItem('ktv_host_mode', val));
             watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
-
             // 逻辑拆分：待唱列表和已唱列表
             const queueList = computed({
                 get: () => songs.value.filter(s => !s.state || s.state === 'queued'),
@@ -795,6 +861,22 @@
                 }
             });
             const historyList = computed(() => songs.value.filter(s => s.state === 'sung'));
+
+            // 监听正在播放歌曲的变化
+            watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) => {
+                // 只有当开启了主机模式，且新歌确实存在，且与旧歌不同（通过 ID 判断）时执行
+                if (hostMode.value && newSong && (!oldSong || newSong.id !== oldSong.id)) {
+                    console.log('主机模式：检测到新歌，正在自动跳转...', newSong.title);
+
+                    if (newSong.url) {
+                        // 主机模式下直接跳转，不弹窗确认
+                        // 为了保证稳定性，延迟 800ms 等待数据同步完成
+                        setTimeout(() => {
+                            window.location.href = newSong.url;
+                        }, 800);
+                    }
+                }
+            }, { deep: true });
 
             const isFavorited = (song) => {
                 return favorites.value.some(f => f.url === song.url);
@@ -978,6 +1060,12 @@
                 await add();
                 showAddModal.value = false;
                 autoInput.value = ''; // 清空识别框
+            };
+
+            const reAdd = async (song) => {
+                form.value.title = song.title;
+                form.value.url = song.url;
+                await handleAdd();
             };
 
             const handleAutoRecognize = () => {
@@ -1259,49 +1347,56 @@
                 }
             };
 
+            const executeJump = (url) => {
+                // 尝试从已有的 URL 中提取 page 参数和 BV 号
+                // 此时的 url 可能是后端传来的 bilibili://video/BVxxx?page=1
+                let bvId = null;
+                let pageIdx = null;
+
+                const bvMatch = url.match(/BV[a-zA-Z0-9]{10}/i);
+                if (bvMatch) {
+                    bvId = bvMatch[0];
+                    const urlObj = new URL(url.replace('bilibili://', 'https://')); // 借用 URL 对象解析参数
+                    pageIdx = urlObj.searchParams.get('page');
+                }
+
+                if (jumpMode.value === 'app') {
+                    // --- App ---
+                    // 如果后端已经处理好了协议，直接跳转即可
+                    if (url.startsWith('bilibili://')) {
+                        window.location.href = url;
+                    } else if (bvId) {
+                        // 如果拿到的还是原始链接
+                        window.location.href = `bilibili://video/${bvId}${pageIdx ? `?page=${pageIdx}` : ''}`;
+                    } else {
+                        window.location.href = url;
+                    }
+                } else {
+                    // --- Web ---
+                    if (bvId) {
+                        // H5 端的分 P 参数通常是 p=(page+1)
+                        // 这里的处理是为了让 Web 端也能跳到对应的分 P
+                        const pForWeb = pageIdx ? parseInt(pageIdx) + 1 : null;
+                        // 这里的unique_k=0不知道是什么，反正加上之后b站手机网页会显示更详细的信息
+                        const webUrl = `https://m.bilibili.com/video/${bvId}?unique_k=0${pForWeb ? `&p=${pForWeb}` : ''}`;
+                        window.open(webUrl, '_blank');
+                    } else {
+                        window.open(url, '_blank');
+                    }
+                }
+            }
+
             const confirmJump = () => {
                 if (pendingJumpUrl.value) {
                     const url = pendingJumpUrl.value;
-
-                    // 尝试从已有的 URL 中提取 page 参数和 BV 号
-                    // 此时的 url 可能是后端传来的 bilibili://video/BVxxx?page=1
-                    let bvId = null;
-                    let pageIdx = null;
-
-                    const bvMatch = url.match(/BV[a-zA-Z0-9]{10}/i);
-                    if (bvMatch) {
-                        bvId = bvMatch[0];
-                        const urlObj = new URL(url.replace('bilibili://', 'https://')); // 借用 URL 对象解析参数
-                        pageIdx = urlObj.searchParams.get('page');
-                    }
-
-                    if (jumpMode.value === 'app') {
-                        // --- App ---
-                        // 如果后端已经处理好了协议，直接跳转即可
-                        if (url.startsWith('bilibili://')) {
-                            window.location.href = url;
-                        } else if (bvId) {
-                            // 如果拿到的还是原始链接
-                            window.location.href = `bilibili://video/${bvId}${pageIdx ? `?page=${pageIdx}` : ''}`;
-                        } else {
-                            window.location.href = url;
-                        }
-                    } else {
-                        // --- Web ---
-                        if (bvId) {
-                            // H5 端的分 P 参数通常是 p=(page+1)
-                            // 这里的处理是为了让 Web 端也能跳到对应的分 P
-                            const pForWeb = pageIdx ? parseInt(pageIdx) + 1 : null;
-                            // 这里的unique_k=0不知道是什么，反正加上之后b站手机网页会显示更详细的信息
-                            const webUrl = `https://m.bilibili.com/video/${bvId}?unique_k=0${pForWeb ? `&p=${pForWeb}` : ''}`;
-                            window.open(webUrl, '_blank');
-                        } else {
-                            window.open(url, '_blank');
-                        }
-                    }
+                    executeJump(url);
                     pendingJumpUrl.value = null;
                 }
             };
+
+            const backHome = () => {
+                window.location.href = './';
+            }
 
             const onDragChange = async (evt) => {
                 isDragging.value = false;
@@ -1469,12 +1564,12 @@
 
             return {
                 songs, queueList, historyList, nextSong,
-                form, add, remove, load, onDragChange,
+                form, add, remove, load, onDragChange, reAdd,
                 lastHash, activeTab, isDragging, goToLink, startEdit,
                 saveEdit, editingSong, editForm, moveToTop, undoSung,
-                deletingSong, confirmDelete, pendingJumpUrl,
+                deletingSong, confirmDelete, pendingJumpUrl, backHome,
                 jumpSongTitle, confirmJump, showSettings,
-                jumpMode, autoJump, showAddModal, autoInput,
+                jumpMode, autoJump, showAddModal, autoInput, hostMode,
                 handleAutoRecognize, handleAdd, showShuffleConfirm,
                 shuffleSongs,handleRefresh,isRefreshing,
                 nickname, showNicknameModal, tempNickname, saveNickname,
