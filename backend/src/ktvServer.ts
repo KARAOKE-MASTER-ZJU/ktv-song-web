@@ -685,13 +685,13 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
 
     // 解析 B 站视频、番剧和分享短链接。
     router.post('/api/parseLink', async (koaCtx) => {
-        let { link } = (koaCtx.request.body || {}) as { link?: unknown };
-        if (typeof link !== 'string') {
+        const { link: rawLink } = (koaCtx.request.body || {}) as { link?: unknown };
+        if (typeof rawLink !== 'string') {
             koaCtx.status = 400;
             koaCtx.body = { success: false, msg: '链接不能为空' };
             return;
         }
-        link = link.trim();
+        let link = rawLink.trim();
         ktvLogger.debug('parse link: ', link)
         // 如果是 B 站链接
         if (link && (link.startsWith('bilibili://') || isBilibiliUrl(link) || link.match(/BV[a-zA-Z0-9]{10}/i))) {
