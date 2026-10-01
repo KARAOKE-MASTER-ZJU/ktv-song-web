@@ -539,22 +539,41 @@ function filterCachedBilibiliSearchVideos(items: BilibiliSearchVideo[], keyword:
         .map(entry => entry.item);
 }
 
-/**
- * 解析 B23.TV 短链接并提取 BV 号
- * @param inputUrl
- * @returns 返回提取到的 BV 号
- */
+// 将番剧网页和 App 链接统一为单集或整季协议，保留原来的播放目标。
+function resolveBilibiliBangumi(urlObj: URL) {
+    let match: RegExpMatchArray | null = null;
+    if (urlObj.protocol === 'bilibili:') {
+        if (urlObj.hostname === 'pgc') match = urlObj.pathname.match(/^\/season\/ep\/([1-9]\d*)\/?$/);
+        if (urlObj.hostname === 'bangumi') {
+            const seasonMatch = urlObj.pathname.match(/^\/season\/([1-9]\d*)\/?$/);
+            if (seasonMatch) return { url: `bilibili://bangumi/season/${seasonMatch[1]}`, pNum: 0 };
+        }
+        if (match) return { url: `bilibili://pgc/season/ep/${match[1]}`, pNum: 0 };
+    } else if (isBilibiliHost(urlObj.hostname)) {
+        match = urlObj.pathname.match(/^\/bangumi\/play\/(ep|ss)([1-9]\d*)\/?$/);
+        if (match) return {
+            url: match[1] === 'ep' ? `bilibili://pgc/season/ep/${match[2]}` : `bilibili://bangumi/season/${match[2]}`,
+            pNum: 0
+        };
+    }
+    return null;
+}
+
+/** 解析 B 站视频、番剧及 B23.TV 分享链接。 */
 async function resolveBilibiliData(inputUrl: string) {
     // If it's already our internal protocol, just normalize and preserve page.
     if (inputUrl.startsWith('bilibili://')) {
         try {
+            const bangumiData = resolveBilibiliBangumi(new URL(inputUrl));
+            if (bangumiData) return bangumiData;
             const urlObj = new URL(inputUrl.replace('bilibili://', 'https://'));
             const bvMatch = urlObj.pathname.match(/BV[a-zA-Z0-9]{10}/i);
             if (!bvMatch) return null;
             const bvid = bvMatch[0];
             const pageParam = urlObj.searchParams.get('page');
-            const parsedPageNum = pageParam !== null ? parseInt(pageParam, 10) : 0;
-            const hasValidPage = pageParam !== null && Number.isFinite(parsedPageNum);
+            const webPageParam = urlObj.searchParams.get('p');
+            const parsedPageNum = pageParam !== null ? parseInt(pageParam, 10) : webPageParam !== null ? parseInt(webPageParam, 10) - 1 : 0;
+            const hasValidPage = (pageParam !== null || webPageParam !== null) && Number.isFinite(parsedPageNum);
             const pageNum = hasValidPage ? Math.max(0, parsedPageNum) : 0;
             return {
                 // Normalize to `page` (0-based) for Bilibili app deep link.
@@ -584,6 +603,7 @@ async function resolveBilibiliData(inputUrl: string) {
 
         try {
             const response = await axios(parsedInputUrl.href, {
+                timeout: 10000,
                 maxRedirects: 0,
                 validateStatus: (status) => status >= 200 && status < 400,
                 headers: { 'User-Agent': 'Mozilla/5.0...' }
@@ -598,6 +618,8 @@ async function resolveBilibiliData(inputUrl: string) {
     try {
         const urlObj = new URL(targetUrl);
         if (!isBilibiliHost(urlObj.hostname)) return null;
+        const bangumiData = resolveBilibiliBangumi(urlObj);
+        if (bangumiData) return bangumiData;
         const bvMatch = urlObj.pathname.match(/BV[a-zA-Z0-9]{10}/i);
         if (!bvMatch) return null;
 

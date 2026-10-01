@@ -195,7 +195,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         if (songError) return songError;
 
         // 如果是 B 站链接
-        if (song && song.url && !song.url.startsWith('bilibili://') && (isBilibiliUrl(song.url) || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
+        if (song && song.url && (song.url.startsWith('bilibili://') || isBilibiliUrl(song.url) || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
             const biliData = await resolveBilibiliData(song.url);
             if (biliData) {
                 // 更新 URL
@@ -683,7 +683,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         }
     });
 
-    //解析b站短链接
+    // 解析 B 站视频、番剧和分享短链接。
     router.post('/api/parseLink', async (koaCtx) => {
         let { link } = (koaCtx.request.body || {}) as { link?: unknown };
         if (typeof link !== 'string') {
@@ -691,9 +691,10 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: false, msg: '链接不能为空' };
             return;
         }
+        link = link.trim();
         ktvLogger.debug('parse link: ', link)
         // 如果是 B 站链接
-        if (link && !link.startsWith('bilibili://') && (isBilibiliUrl(link) || link.match(/BV[a-zA-Z0-9]{10}/i))) {
+        if (link && (link.startsWith('bilibili://') || isBilibiliUrl(link) || link.match(/BV[a-zA-Z0-9]{10}/i))) {
             const biliData = await resolveBilibiliData(link);
             if (biliData) {
                 // 更新 URL

@@ -29,7 +29,7 @@ export function initUtils(lastHash){
         }
 
         // 只删除末尾的 B 站分享后缀，兼容连字符两侧的空白。
-        title = title.replace(/\s*-\s*哔哩哔哩\s*$/i, '').trim();
+        title = title.replace(/\s*-\s*哔哩哔哩(?:番剧)?\s*$/i, '').trim();
 
         const blacklist = /(ニコカラ|on[ /]?vocal|off[ /]?vocal|on\/off vocal|假名|字幕|罗马音|和声伴奏|纯k投屏|自用|完整版MV|KTV字幕|KTV|Karaoke|搬运|カラオケ|nicokara|卡拉OK|歌词|分唱)/gi;
 
@@ -124,7 +124,7 @@ export function initUtils(lastHash){
 
     const parseBilibiliShortLink = async (link) => {
         if (!link) return;
-        if (link.includes('b23.tv') || link.includes('bilibili.com') || link.match(/BV[a-zA-Z0-9]{10}/i)) {
+        if (link.startsWith('bilibili://') || link.includes('b23.tv') || link.includes('bilibili.com') || link.match(/BV[a-zA-Z0-9]{10}/i)) {
             try {
                 const res = await fetch(`api/parseLink`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
@@ -146,16 +146,49 @@ export function initUtils(lastHash){
         if (!raw) return;
 
         // 提取链接
-        const urlMatch = raw.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:bilibili\.com|b23\.tv)\/[a-zA-Z0-9/._?=-]+/i);
+        const urlMatch = raw.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:bilibili\.com|b23\.tv)\/[^\s<>"'【】]+|bilibili:\/\/[^\s<>"'【】]+/i);
 
         if (urlMatch) form.url = urlMatch[0];
 
         // 去掉链接并 trim 后，按外层括号、末尾分享后缀、内部标签的顺序清理标题。
-        const titleWithoutLink = raw.replace(/https?:\/\/\S+/g, '').trim();
+        const titleWithoutLink = urlMatch ? raw.replace(urlMatch[0], '').trim() : raw;
         form.title = normalizeBilibiliTitle(titleWithoutLink);
     };
 
     const executeJump = (url, jumpMode) => {
+        // 番剧单集和整季分别使用 ep_id、season_id，不套用普通视频的分 P 参数。
+        try {
+            const parsedUrl = new URL(url);
+            let bangumiId = null;
+            let bangumiType = null;
+            if (parsedUrl.protocol === 'bilibili:') {
+                const epMatch = parsedUrl.hostname === 'pgc' && parsedUrl.pathname.match(/^\/season\/ep\/([1-9]\d*)\/?$/);
+                const ssMatch = parsedUrl.hostname === 'bangumi' && parsedUrl.pathname.match(/^\/season\/([1-9]\d*)\/?$/);
+                if (epMatch || ssMatch) {
+                    bangumiId = (epMatch || ssMatch)[1];
+                    bangumiType = epMatch ? 'ep' : 'ss';
+                }
+            } else if (['http:', 'https:'].includes(parsedUrl.protocol) &&
+                (parsedUrl.hostname === 'bilibili.com' || parsedUrl.hostname.endsWith('.bilibili.com') || parsedUrl.hostname === 'b23.tv')) {
+                const match = parsedUrl.pathname.match(/^\/(?:bangumi\/play\/)?(ep|ss)([1-9]\d*)\/?$/);
+                if (match) {
+                    bangumiType = match[1];
+                    bangumiId = match[2];
+                }
+            }
+            if (bangumiId) {
+                if (jumpMode === 'app') {
+                    window.location.href = bangumiType === 'ep'
+                        ? `bilibili://pgc/season/ep/${bangumiId}`
+                        : `bilibili://bangumi/season/${bangumiId}`;
+                } else {
+                    window.open(`https://m.bilibili.com/bangumi/play/${bangumiType}${bangumiId}`, '_blank');
+                }
+                return;
+            }
+        } catch {
+            // 继续使用原有的视频或通用链接跳转。
+        }
         // 尝试从已有的 URL 中提取分P参数和 BV 号
         // url 可能是前端生成或后端解析出来的 bilibili://video/BVxxx?page=0 或 bilibili://video/BVxxx?page=1
         let bvId = null;
@@ -166,6 +199,10 @@ export function initUtils(lastHash){
             bvId = bvMatch[0];
             const urlObj = new URL(url.replace('bilibili://', 'https://')); // 借用 URL 对象解析参数
             pageIdx = urlObj.searchParams.get('page');
+            if (pageIdx === null && urlObj.searchParams.has('p')) {
+                const webPage = parseInt(urlObj.searchParams.get('p'), 10);
+                if (Number.isFinite(webPage)) pageIdx = String(Math.max(0, webPage - 1));
+            }
         }
 
         if (jumpMode === 'app') {
