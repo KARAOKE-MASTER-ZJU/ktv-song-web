@@ -15,11 +15,21 @@ export function initUtils(lastHash){
         let title = (rawTitle || "").trim();
         if (!title) return '';
 
-        // "-哔哩哔哩" 的最外层括号
-        // 【内容-哔哩哔哩】 -> 内容
-        title = title.replace(/[【](.*)-哔哩哔哩[】]/i, '$1');
-        // 如果没被括号包住，也直接删掉后缀
-        title = title.replace(/-哔哩哔哩/i, '');
+        // 先剥掉 B 站分享文案完整包裹标题的最外层【】，保留内部标签。
+        if (title.startsWith('【')) {
+            let depth = 0;
+            for (let i = 0; i < title.length; i++) {
+                if (title[i] === '【') depth++;
+                if (title[i] === '】') depth--;
+                if (depth === 0) {
+                    if (i === title.length - 1) title = title.slice(1, -1).trim();
+                    break;
+                }
+            }
+        }
+
+        // 只删除末尾的 B 站分享后缀，兼容连字符两侧的空白。
+        title = title.replace(/\s*-\s*哔哩哔哩\s*$/i, '').trim();
 
         const blacklist = /(ニコカラ|on[ /]?vocal|off[ /]?vocal|on\/off vocal|假名|字幕|罗马音|和声伴奏|纯k投屏|自用|完整版MV|KTV字幕|KTV|Karaoke|搬运|カラオケ|nicokara|卡拉OK|歌词|分唱)/gi;
 
@@ -55,12 +65,6 @@ export function initUtils(lastHash){
                             for (let k = start; k <= end; k++) {
                                 chars[k] = "";
                             }
-                        }
-
-                        // B站分享文案自带的包裹：最外层【】完整包裹整个标题（起于开头、闭于末尾）时剥掉这一层
-                        if (left.type === '【' && start === 0 && end === chars.length - 1) {
-                            chars[start] = "";
-                            chars[end] = "";
                         }
                     }
                 }
@@ -146,7 +150,7 @@ export function initUtils(lastHash){
 
         if (urlMatch) form.url = urlMatch[0];
 
-        // 初始清理：只去掉链接，保留所有文字和括号
+        // 去掉链接并 trim 后，按外层括号、末尾分享后缀、内部标签的顺序清理标题。
         const titleWithoutLink = raw.replace(/https?:\/\/\S+/g, '').trim();
         form.title = normalizeBilibiliTitle(titleWithoutLink);
     };
