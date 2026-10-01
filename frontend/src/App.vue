@@ -929,7 +929,8 @@ const load = async () => {
 
 const goToLink = (song) => {
     if (song && song.url) {
-        pendingJumpUrl.value = /^https?:\/\//i.test(song.url) ? song.url : `https://${song.url}`;
+        const url = song.url.trim();
+        pendingJumpUrl.value = /^(?:https?|bilibili):\/\//i.test(url) ? url : `https://${url}`;
         jumpSongTitle.value = song.title;
 
         if (cfg.value.autoJump) {
