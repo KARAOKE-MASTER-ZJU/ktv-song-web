@@ -918,6 +918,39 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         notifyUpdate(roomId, finalHash);
     });
 
+    // 编辑当前歌曲信息
+    router.post('/api/editCurrentSong', async (koaCtx) => {
+        const { roomId: roomIds } = koaCtx.query;
+        const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const roomIdError = validateRoomId(roomId);
+        if (!roomId || roomIdError) {
+            return koaCtx.body = { success: false, msg: roomIdError };
+        }
+        const { idArrayHash, song } = (koaCtx.request.body || {}) as { idArrayHash: string; song: Song };
+
+        const songError = await prepareSong(song);
+        if (songError) return koaCtx.body = { success: false, msg: songError };
+
+        const loadedSongLists = await ensureRoom(roomId);
+        if (loadedSongLists === null) return koaCtx.body = { success: false, msg: '房间不存在' };
+        const allSongLists = roomSongsCache[roomId] || loadedSongLists;
+        const currentSong = allSongLists.singing;
+        if (!currentSong || currentSong.id !== song.id) {
+            return koaCtx.body = { success: false, code: 'REJECT', msg: '当前歌曲已切换' };
+        }
+        if (idArrayHash !== getHash(allSongLists)) {
+            return koaCtx.body = { success: false, code: 'REJECT' };
+        }
+
+        const updatedSong: Song = { ...currentSong, title: song.title, url: song.url };
+        const finalSongLists: SongLists = { ...allSongLists, singing: updatedSong };
+        const finalHash = getHash(finalSongLists);
+        roomSongsCache[roomId] = finalSongLists;
+        await persistRoom(roomId, finalSongLists);
+        koaCtx.body = { success: true, hash: finalHash, song: updatedSong };
+        notifyUpdate(roomId, finalHash);
+    });
+
     // Move/Add/Delete 逻辑
     router.post('/api/songOperation', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;

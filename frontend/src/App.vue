@@ -71,6 +71,7 @@ const cfg = ref({
 // api接口
 const lastHash = ref(EMPTY_HASH);
 const commitApiUrl = "api/songOperation"
+const editCurrentSongUrl = "api/editCurrentSong"
 const addSongUrl = "api/addSong"
 const loadSongListUrl = "api/songListInfo"
 const nextSongUrl = "api/nextSong"
@@ -86,6 +87,8 @@ const activeTab = ref(localStorage.getItem('ktv_active_tab') || 'queue');
 const isDragging = ref(false);
 const deletingSong = ref(null);
 const editingSong = ref(null);
+const isEditingCurrentSong = ref(false);
+const savingEdit = ref(false);
 const isAddingToFavorites = ref(false);
 const showFavoritesModal = ref(false);
 const showNicknameModal = ref(false);
@@ -366,7 +369,7 @@ const handleImportFile = (event) => {
 
 
 //歌曲操作相关
-const commitOp = async (opData) => {
+const commitOp = async (opData, apiUrl = commitApiUrl) => {
     let cleanSong = null;
     if (opData.song) {
         const { id, title, url, state, addedBy } = opData.song;
@@ -374,7 +377,7 @@ const commitOp = async (opData) => {
     }
 
     try {
-        const res = await fetch(`${commitApiUrl}?roomId=${roomId.value}`, {
+        const res = await fetch(`${apiUrl}?roomId=${roomId.value}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
                 idArrayHash: lastHash.value,
                 toIndex: opData.toIndex, song: cleanSong
@@ -401,6 +404,7 @@ const commitOp = async (opData) => {
             // 如果被拒绝，说明前端 Hash 过时
             lastHash.value = EMPTY_HASH; // 重置
             requestSync();
+            if (res.msg) showToast(res.msg);
         } else if (res.msg) {
             // 其他失败（校验不通过、房间不存在等）：toast 提示后端原因
             showToast(res.msg);
@@ -960,7 +964,9 @@ const onDragChange = async (evt) => {
 
 // 点击编辑按钮触发
 const startEdit = (song) => {
+    if (!song || savingEdit.value) return;
     editingSong.value = song;
+    isEditingCurrentSong.value = song === singing.value;
     editForm.value = { title: song.title, url: song.url };
 };
 
@@ -980,30 +986,42 @@ const handleRefresh = async () => {
 
 // 保存逻辑
 const saveEdit = async (updatedData) => {
-    // 检查传进来的 updatedData 是否有值
-    if (!updatedData || !updatedData.title || !updatedData.url) return;
+    if (savingEdit.value || !updatedData || !updatedData.title || !updatedData.url) return;
 
-    const song = editingSong.value;
+    let song = editingSong.value;
     if (!song) return;
-    // 编辑操作只作用于 queued 中的歌曲（与后端语义对齐）
+    if (isEditingCurrentSong.value) {
+        if (singing.value?.id !== song.id) {
+            showToast('当前歌曲已切换');
+            requestSync();
+            return;
+        }
+        song = singing.value;
+    }
     const index = queued.value.findIndex(s => s.id === song.id);
     const oldData = { title: song.title, url: song.url };
 
     // 乐观更新UI
     song.title = updatedData.title;
     song.url = updatedData.url;
+    savingEdit.value = true;
 
-    if (index !== -1) {
-        const success = await commitOp({
-            song: song, toIndex: index // 原位覆盖更新（queued 内索引）
-        });
+    try {
+        let success = true;
+        if (isEditingCurrentSong.value) {
+            success = await commitOp({ song }, editCurrentSongUrl);
+        } else if (index !== -1) {
+            success = await commitOp({ song, toIndex: index });
+        }
         if (!success) {
             // 失败回退
             song.title = oldData.title;
             song.url = oldData.url;
         }
+        if (success || !isEditingCurrentSong.value) editingSong.value = null;
+    } finally {
+        savingEdit.value = false;
     }
-    editingSong.value = null;
 };
 
 const saveNickname = () => {
@@ -1397,6 +1415,17 @@ onUnmounted(() => {
                     <div class="url-text truncate">{{ singing?.url || "" }}</div>
                 </div>
             </div>
+            <button v-if="singing"
+                    type="button"
+                    class="current-song-edit"
+                    title="编辑当前歌曲"
+                    aria-label="编辑当前歌曲"
+                    @click.stop="startEdit(singing)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+            </button>
         </div>
     </div>
 
@@ -1639,6 +1668,14 @@ onUnmounted(() => {
     @apply border p-4 rounded-3xl flex items-center transition-all active:scale-95 cursor-pointer;
     background-color: var(--brand-color-lighter);
     border-color: var(--brand-color-light);
+}
+
+.current-song-edit {
+    @apply shrink-0 p-1.5 transition-all focus-visible:outline-2 focus-visible:outline-offset-2;
+    color: #cbd5e1;
+}
+.current-song-edit:hover {
+    color: var(--brand-color);
 }
 
 .now-playing-title {
