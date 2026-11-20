@@ -707,27 +707,25 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
 
     首先第一步，打标
     HEAD-0-A-1-B-2-C-3-D-4-E-5-F-6-G-7-HEAD
+    其中数字节点（numberNodes）代表基于 S_0 建立的固定空位锚点，不随歌曲移动而迁移（避免某首歌被移走时连带影响其他客户端目标位置）。
 
-    然后依次执行OpLog中的操作
-    注意这里不用管链表的数字，只需要根据元素进行插入即可，因为每一步都是基于上一步的结果产生的操作
-    也就是说 插入index 2 并不是插入到链表元素2在的位置，而是ABCDEFG中去除待排元素后排列第二个(index=2-1)的后面
-    举个例子就是  HEAD-0-A-1-B-D-E-2-C-3-4-5-F-6-G-7-TAIL
-    把A插入到index=4的意思就是，先把链表的歌曲元素弄出来得到BDECFG，
-    然后A就知道自己要放到C(index=4-1)后面
-    然后再进行链表操作放过去就行
-    也就是C-3变成C-A-3,0-A-1变成0-1
+    注意区分以下两个阶段，两者的寻址方式不同但各自对应明确语义：
+    1. 阶段一（重放历史 sortedOps）：只用于还原 S_0 -> S_n 之间已落盘的历史变化。
+       重放历史 ops 时不用管链表的数字节点，而是根据元素前驱来复现每一步结果；
+       因为历史 op 在入库前已将 toIndex 改写为“插完后元素在当时结果数组中的下标”（见函数末尾），
+       所以插入 index 2 表示：在 op[i].baseIdArray 去掉待排元素后的数组中，放到 index=2-1 的元素后面。
+       举个例子就是  HEAD-0-A-1-B-D-E-2-C-3-4-5-F-6-G-7-TAIL
+       把A插入到index=4的意思就是，先把链表的歌曲元素弄出来得到BDECFG，
+       然后A就知道自己要放到C(index=4-1)后面
+       然后再进行链表操作放过去就行
+       也就是C-3变成C-A-3,0-A-1变成0-1
 
-    *其实也可以不用管链表
-    因为每个op都存了当前操作和基础数组
-    所以实际上重演逻辑的时候，拿到的数组一定是当前的基础数组
-    那就可以
-    若op[i]时为
-    把A插入到index=4
-    那就相当于
-    把A插入到index=3之后
-    也就是insert A after op[i].idArray.filter(id=>id!=A.id).at(3)
-    特别地，操作为加入新元素时，会多形成一个空位，这正是所预期的
-    操作为删除元素时，toIndex=-1，这时候直接删除
+       *历史重放之所以可以用元素前驱（insert A after op[i].baseIdArray.filter(id=>id!=A.id).at(toIndex-1)），
+       是因为每条历史 op[i] 都是当时直接基于 op[i].baseIdArray 落盘的结果，按前驱还原即可精确重现当时状态。
+       特别地，操作为加入新元素时，会多形成一个空位，这正是所预期的；
+       操作为删除元素时，toIndex=-1，这时候直接删除。
+    2. 阶段二（落位当前 nowOp）：nowOp 是基于 S_0 提交的新操作，必须插到 S_0 的固定空位锚点（numberNodes）中，
+       而不是跟随某首歌移动；即使某首歌在历史 ops 中被挪走，原空位锚点仍留在链表原处。
 
 
     比如
@@ -788,7 +786,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
     let current = head;
     // 构建id->node的Map
     const idNodes = new Map<string, ListNode>();
-    // 构建数字索引->node的Map
+    // 构建数字索引->node的Map（代表 S_0 的固定空位锚点，不随歌曲移动，供阶段二 nowOp 落位使用）
     const numberNodes = new Map<number, ListNode>();
     const maxNumber = (baseSongIdArray?.length || 0)
     // 遍历base数组，初始化
@@ -815,7 +813,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         }
     }
     // 到这里已经初始化完成
-    // 接下来要处理ops[]
+    // 阶段一：重放历史 sortedOps（按当时落盘的 baseIdArray 与结果下标还原状态）
     for (let i = 0; i < sortedOps.length; i++) {
         const lastArray: string[] = sortedOps.at(i).baseIdArray;
         const toIndex: number = sortedOps.at(i).toIndex;
@@ -846,7 +844,8 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
 
     }
 
-    /* 现在我们要对nowOp中的索引换一种表达方式
+    /* 阶段二：放置当前操作 nowOp（按 S_0 的固定空位锚点 numberNodes 落位，不跟随其他歌曲移动）
+    现在我们要对nowOp中的索引换一种表达方式
     现在的toIndex表示的是插入后元素所在的位置
     我们需要转换成元素插入的空隙
     比如下面这个C
@@ -907,6 +906,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         }
         p = p.next;
     }
+    // 将 nowOp.toIndex 更新为在最终结果中的下标，供后续作为历史 op 重放时定位前驱元素
     nowOp.toIndex = result.findIndex(r => r.id == opId);
     return result;
 }

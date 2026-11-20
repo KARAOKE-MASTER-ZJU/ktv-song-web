@@ -78,6 +78,21 @@ rid建议使用标准36位uuid，防止碰撞。rid上限40字符，并且需要
 
 新旧接口共用 `songOperation` 执行逻辑和操作日志记录：新添加以服务器当前歌单为基础，旧接口保留客户端 Hash 的回放合并。先同步更新内存歌单及日志，再持久化并通知客户端。房间缓存和操作日志仍为进程内状态，部署保持单后端实例。
 
+### 队列变基与操作日志（`songOperation` / `OpLog`）
+
+`backend/src/utils.ts` 中的 `songOperation` 用于把基于旧歌单版本 `S_0` 的操作变基到当前服务端歌单 `S_n`：
+
+- **位置模型（固定空位锚点，不跟随歌曲移动）**：
+  - 变基初始化时会在 `S_0` 的每首歌曲之间生成编号空位节点（`0..N`，对应代码里的 `numberNodes`）。
+  - 这些空位锚点**不跟随歌曲移动**。例如某首歌从队头被拖到队尾后，它原先让出的位置空位仍留在原地，因此其他客户端基于 `S_0` 插入“第 1 个空位”时不会跟着那首歌一起跑到队尾。
+  - **历史操作重放（`sortedOps`）**与**当前操作落位（`nowOp`）**分工不同：`nowOp` 按 `S_0` 的 `numberNodes` 空位锚点落位，并在结束时把 `nowOp.toIndex` 更新为**在最终结果数组中的下标**；后续再发生变基时，历史 `sortedOps` 会依据各自记录的 `baseIdArray` 和这个结果下标寻找前驱元素来复现当时已知的变化（`toIndex === -1` 为删除）。
+- **版本匹配与各接口差异**：
+  - `/api/songOperation`、`/api/nextSong`、`/api/undoSung` 收到非最新 `idArrayHash` 时，会在 `roomOpCache[roomId]` 中**从后往前**查找最后一条 `baseHash === idArrayHash` 的记录作为 `S_0`，未命中则返回 `REJECT`。
+  - `/api/nextSong` 允许非最新 `idArrayHash` 变基并按 `baseIdArray[0]` 选歌是有意设计：投屏等客户端可基于自己本地看到的队首做乐观切歌（不必强制先等全量同步再切），服务端将其看到的队首放入 `singing` 并从当前队列移除。
+  - `/api/songOperation` 与 `/api/addSong` 写入日志的 `baseHash` / `baseIdArray` 为操作执行前的服务端状态（`serverHash` / `nowIdArray`）。
+  - `/api/nextSong`（队列非空分支）与 `/api/undoSung`（歌曲尚未在待唱队列的分支）当前把请求自带的 `idArrayHash` 与回溯得到的 `baseIdArray` 写入了 `currentOp`，与 `/api/songOperation` 记录服务端执行前快照的做法存在差异，排查或改动跨操作变基时需留意（选择 `baseIdArray[0]` 的乐观切歌语义与 `currentOp` 记录哪种 `baseHash` 是两件独立的事）。
+  - `/api/prevSong`、`/api/nextSong`（队列为空结束当前歌曲分支）、`/api/editCurrentSong` 均要求请求携带服务端最新 hash，否则返回 `REJECT`；`/api/editCurrentSong` 当前不写 `roomOpCache`（修改当前播放歌曲会改变完整 hash），`/api/shuffle` 会清空 `roomOpCache[roomId]`。
+
 ### 缓存作用域说明
 
 - **房间级缓存**：歌曲列表缓存是按 `roomId` 隔离的，每个房间都有自己的 `ktv_room_<roomId>` 数据；一个房间的点歌、切歌、打乱不会影响另一个房间。

@@ -549,9 +549,10 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
 
         const baseIdArray = latest ? nowIdArray : [...logs[hitIdx].baseIdArray];
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
-        // 找第一首待唱歌曲
+        // 按调用方当时所见队列的队首（baseIdArray[0]）切歌，支持投屏端等在未完成全量同步时乐观切歌
         const nextSong = currentQueue.find(s => s.id === baseIdArray[0]);
         if (!nextSong) return koaCtx.body = { success: false, code: 'REJECT' };
+        // 注意：此处当前写入了请求/回溯的 baseIdArray 与 idArrayHash，而非执行前服务端快照（nowIdArray / serverHash），与 /api/songOperation 不一致
         const currentOp: OpLog = {
             baseIdArray: baseIdArray,
             baseHash: idArrayHash,
@@ -739,6 +740,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             return;
         }
 
+        // 注意：此处当前写入了请求/回溯的 baseIdArray 与 idArrayHash，而非执行前服务端快照（nowIdArray / serverHash），与 /api/songOperation 不一致
         const currentOp: OpLog = {
             baseIdArray: baseIdArray,
             baseHash: idArrayHash,
@@ -1004,7 +1006,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         notifyUpdate(roomId, finalHash);
     });
 
-    // 编辑当前歌曲信息
+    // 编辑当前歌曲信息（注意：会改变 singing 进而改变歌单 hash，当前未向 roomOpCache 写入版本日志）
     router.post('/api/editCurrentSong', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
