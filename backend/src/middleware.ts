@@ -1,11 +1,11 @@
-import type { Middleware, Context } from 'koa';
+import type { Middleware } from 'koa';
 import type { Storage } from '@/storage';
 import { REQUEST_ID_NAMESPACE } from '@/types'
 
 export function createRidMiddleware(storage: Storage, ridExpiredTime: number) {
     // 用于POST请求防重复操作的rid机制，rid若重复则返回已处理，不再重复处理，以保证幂等性
     // rid规范使用36位uuid，一般无需特殊处理也不会撞
-    const ridMiddleware: Middleware = async (koaCtx: Context, next) => {
+    const ridMiddleware: Middleware = async (koaCtx, next) => {
         if (koaCtx.method !== 'POST') return next();
         const rid = koaCtx?.header?.["request-id"];
         // 未传rid，按照正常逻辑处理

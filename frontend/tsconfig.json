@@ -14,8 +14,7 @@
             "DOM"
         ],
         "skipLibCheck": true,
-        "noEmit": true,
-        "baseUrl": ".",
+        "noEmit": true
     },
     "include": [
         "src/**/*.ts",
