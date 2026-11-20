@@ -78,6 +78,10 @@ rid建议使用标准36位uuid，防止碰撞。rid上限40字符，并且需要
 
 新旧接口共用 `songOperation` 执行逻辑和操作日志记录：新添加以服务器当前歌单为基础，旧接口保留客户端 Hash 的回放合并。先同步更新内存歌单及日志，再持久化并通知客户端。房间缓存和操作日志仍为进程内状态，部署保持单后端实例。
 
+### 编辑当前歌曲
+
+保存当前歌曲的编辑时，前端调用 `POST /api/editSong?roomId=...`，传入 `songId` 和包含改动字段的 `patch`（待唱歌曲编辑当前仍走 `/api/songOperation`）。接口支持修改 `title` 和 `url`，按 ID 在房间（待唱、正在唱、已唱）中找到歌曲并只更新传入的字段，同一字段以后一次写入为准；编辑期间切歌后仍可按原 ID 保存。hash 实际变化时写入 `editSong` 日志、持久化并广播，成功返回 `success`、`hash` 和保存后的 `song`；歌曲已被移除时返回 `REJECT`。
+
 ### 队列变基与操作日志
 
 `/api/songOperation`、`/api/undoSung` 和待唱队列非空时的 `/api/nextSong` 支持用旧 `idArrayHash` 提交请求。服务端在 `roomOpCache` 中按 `baseHash` 取最近的匹配记录，用该记录的 `baseIdArray` 建立基准版本 `S_0`。找不到该版本时返回 `REJECT`。
@@ -88,7 +92,7 @@ rid建议使用标准36位uuid，防止碰撞。rid上限40字符，并且需要
 
 切歌或撤回已唱改变待唱队列时，日志的 `baseHash` 和 `baseIdArray` 记录操作执行前的服务端 hash 和待唱顺序。即使请求带的是旧 hash，后续客户端也能在日志保留期间找到实际执行前的版本。从更早的版本重放时，日志包含中间已经生效的调序。歌单内容相同时，hash 可以重复。
 
-每个房间最多保留 50 条操作日志。`/api/editCurrentSong`、`/api/prevSong` 和待唱队列为空时的 `/api/nextSong` 要求请求携带最新 hash。`/api/shuffle` 打乱队列后清空房间日志。
+队列操作和 `/api/editSong` 共用每个房间最近 50 条日志。重放队列时，`editSong` 日志只更新仍在待唱队列中的对应歌曲字段，不改变队列顺序。`/api/editCurrentSong`、`/api/prevSong` 和待唱队列为空时的 `/api/nextSong` 要求请求携带最新 hash。`/api/shuffle` 打乱队列后清空房间日志。
 
 ### 缓存作用域说明
 

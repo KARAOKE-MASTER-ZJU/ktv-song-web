@@ -50,13 +50,28 @@ export interface SongOperationBody {
     toIndex: number;
 }
 
-export interface OpLog {
-    baseIdArray: string[]   // 操作前的数组
-    baseHash: string
-    song: Song
-    toIndex: number
+export type SongPatch = Partial<Pick<Song, 'title' | 'url'>>;
+
+interface OpLogBase {
+    baseIdArray: string[]   // 操作前服务端待唱队列 ID
+    baseHash: string        // 操作前服务端歌单 hash
     timestamp: number
 }
+
+export interface QueueOpLog extends OpLogBase {
+    type: 'queue'
+    song: Song
+    toIndex: number
+}
+
+// 歌曲编辑日志：让旧 hash 请求仍能匹配到编辑前的歌单，重放时只更新队列内对应歌曲的标题或链接，不改顺序
+export interface SongEditLog extends OpLogBase {
+    type: 'editSong'
+    songId: string
+    patch: SongPatch
+}
+
+export type OpLog = QueueOpLog | SongEditLog;
 
 export interface BilibiliVideoPart {
     page: number

@@ -1,6 +1,6 @@
 // songOperation.test.ts
 
-import { OpLog, Song } from "@/types";
+import { OpLog, QueueOpLog, Song } from "@/types";
 import { songOperation } from "@/utils";
 
 describe('songOperation Rebase Logic', () => {
@@ -21,6 +21,7 @@ describe('songOperation Rebase Logic', () => {
          * 此时数组状态理论上变为 ['G', 'A', 'B', 'C', 'D', 'E', 'F', 'H']
          */
         const ops: OpLog[] = [{
+            type: 'queue',
             baseIdArray: baseSongIdArray,
             baseHash: 'hash_s0',
             song: songG,
@@ -31,7 +32,8 @@ describe('songOperation Rebase Logic', () => {
         /** * 当前操作 nowOp (待处理的操作):
          * 用户基于 S0，把 C 移动到 D 后 (index 3)
          */
-        const nowOp: OpLog = {
+        const nowOp: QueueOpLog = {
+            type: 'queue',
             baseIdArray: baseSongIdArray,
             baseHash: 'hash_s0',
             song: songC,
@@ -66,6 +68,7 @@ describe('songOperation Rebase Logic', () => {
 
         // 并发操作：删除了 B
         const ops: OpLog[] = [{
+            type: 'queue',
             baseIdArray: baseSongIdArray,
             baseHash: 'hash_s0',
             song: songB,
@@ -74,7 +77,8 @@ describe('songOperation Rebase Logic', () => {
         }];
 
         // 当前操作：把 A 移到 E 后面 (index 4)
-        const nowOp: OpLog = {
+        const nowOp: QueueOpLog = {
+            type: 'queue',
             baseIdArray: baseSongIdArray,
             baseHash: 'hash_s0',
             song: songA,
@@ -95,6 +99,7 @@ describe('songOperation Rebase Logic', () => {
 
         // 别人把 A 移到了 F 后面
         const ops: OpLog[] = [{
+            type: 'queue',
             baseIdArray: baseSongIdArray,
             baseHash: 'hash_s0',
             song: songA,
@@ -103,7 +108,8 @@ describe('songOperation Rebase Logic', () => {
         }];
 
         // 我在 index 3 插入新歌
-        const nowOp: OpLog = {
+        const nowOp: QueueOpLog = {
+            type: 'queue',
             baseIdArray: baseSongIdArray,
             baseHash: 'hash_s0',
             song: songNew,

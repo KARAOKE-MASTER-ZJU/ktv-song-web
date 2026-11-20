@@ -10,8 +10,8 @@ import websockify from 'koa-websocket';
 import { Storage, StorageUnavailableError } from "@/storage";
 import { ArchiveStore } from "@/archiveStore";
 import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, isBilibiliUrl, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
-import { AddSongBody, BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
-import { normalizeSongUrl, validateRoomId, validateSong } from "@/validation";
+import { AddSongBody, BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, QueueOpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, SongPatch, WsReadyState } from "@/types";
+import { normalizeSongUrl, validateRoomId, validateSong, validateSongId, validateSongTitle } from "@/validation";
 import { createRidMiddleware } from "./middleware";
 import { RemoteApps } from './remoteApps';
 
@@ -228,23 +228,57 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         return null;
     };
 
-    // 新旧添加入口共用操作执行、日志和内存发布；这段同步逻辑中不插入 await。
+    const publishRoomOperation = (roomId: string, songLists: SongLists, op: OpLog) => {
+        const logs = roomOpCache[roomId] ??= [];
+        logs.push(op);
+        if (logs.length > 50) logs.shift();
+        roomSongsCache[roomId] = songLists;
+    };
+
+    // 歌单和操作日志在同一段同步代码中发布。
     const applyRoomSongOperation = (
         roomId: string,
         allSongLists: SongLists,
         baseIdArray: string[],
         laterOps: OpLog[],
-        currentOp: OpLog
+        currentOp: QueueOpLog
     ) => {
         const queued = songOperation([...allSongLists.queued], baseIdArray, laterOps, currentOp);
         const finalSongLists = { ...allSongLists, queued };
         const finalHash = getHash(finalSongLists);
-        const logs = roomOpCache[roomId] || [];
-        logs.push(currentOp);
-        if (logs.length > 50) logs.shift();
-        roomSongsCache[roomId] = finalSongLists;
-        roomOpCache[roomId] = logs;
+        publishRoomOperation(roomId, finalSongLists, currentOp);
         return { finalSongLists, finalHash };
+    };
+
+    // 按 ID 在待唱、正在唱和已唱列表中查找歌曲
+    const findRoomSong = ({ queued, singing, sung }: SongLists, songId: string) =>
+        queued.find(song => song.id === songId)
+        ?? (singing?.id === songId ? singing : sung.find(song => song.id === songId));
+
+    // 保存歌曲的标题或链接修改；只有 hash 实际变化时才记日志、持久化并广播
+    const saveRoomSongEdit = async (roomId: string, lists: SongLists, song: Song, patch: SongPatch, baseHash: string) => {
+        const updatedSong = { ...song, ...patch };
+        const update = (item: Song) => item.id === song.id ? { ...item, ...patch } : item;
+        const finalSongLists = {
+            ...lists,
+            queued: lists.queued.map(update),
+            singing: lists.singing && update(lists.singing),
+            sung: lists.sung.map(update)
+        };
+        const hash = getHash(finalSongLists);
+        if (hash !== baseHash) {
+            publishRoomOperation(roomId, finalSongLists, {
+                type: 'editSong',
+                songId: song.id,
+                patch,
+                baseHash,
+                baseIdArray: lists.queued.map(item => item.id),
+                timestamp: Date.now()
+            });
+            await persistRoom(roomId, finalSongLists);
+            notifyUpdate(roomId, hash);
+        }
+        return { success: true, hash, song: updatedSong };
     };
 
     // WebSocket 路由：歌单广播与遥控共用一条连接
@@ -504,6 +538,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         const { idArrayHash } = koaCtx.request.body as { idArrayHash: string };
         ktvLogger.debug('nextSong: ', roomId, idArrayHash)
 
+        // TODO(next-song-cache-race) await ensureRoom 后若缓存已被并发替换，下方会把 queued 写入新对象、singing/sung 写入旧对象导致丢歌；应重读 roomSongsCache 并用同一对象更新（prevSong/undoSung 同理）。
         const currentSongLists = await ensureRoom(roomId);
         if (currentSongLists === null) return koaCtx.body = { success: false, msg: '房间不存在' };
         const currentQueue = currentSongLists.queued;
@@ -550,10 +585,12 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         const baseIdArray = latest ? nowIdArray : [...logs[hitIdx].baseIdArray];
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
         // 按调用方当时所见队列的队首（baseIdArray[0]）切歌，支持投屏端等在未完成全量同步时乐观切歌
+        // TODO(next-song-stale-check) 目标歌已在唱时旧请求目前返回 REJECT，而更旧版本的队首若仍在待唱反而能继续切走；后续需结合请求时的 singing 区分重试与过期切歌。
         const nextSong = currentQueue.find(s => s.id === baseIdArray[0]);
         if (!nextSong) return koaCtx.body = { success: false, code: 'REJECT' };
         // 记录执行前的服务端快照，供后续请求变基。
-        const currentOp: OpLog = {
+        const currentOp: QueueOpLog = {
+            type: 'queue',
             baseIdArray: nowIdArray,
             baseHash: serverHash,
             song: nextSong,
@@ -611,7 +648,8 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             if (currentSongLists.singing) {
                 // 把正在唱的歌放到队列头（通过 songOperation，记录到 OpLog）
                 const currentSinging = currentSongLists.singing as Song;
-                const currentOp: OpLog = {
+                const currentOp: QueueOpLog = {
+                    type: 'queue',
                     baseIdArray: baseIdArray,
                     baseHash: idArrayHash,
                     song: currentSinging,
@@ -650,7 +688,8 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         }
 
         // 如果有正在唱的歌，则构造 OpLog 将其移回队列头
-        const currentOp: OpLog | null = currentSinging ? {
+        const currentOp: QueueOpLog | null = currentSinging ? {
+            type: 'queue',
             baseIdArray: baseIdArray,
             baseHash: idArrayHash,
             song: currentSinging,
@@ -741,7 +780,8 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         }
 
         // 记录执行前的服务端快照，供后续请求变基。
-        const currentOp: OpLog = {
+        const currentOp: QueueOpLog = {
+            type: 'queue',
             baseIdArray: nowIdArray,
             baseHash: serverHash,
             song: targetSong,
@@ -991,7 +1031,8 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: true, hash: getHash(allSongLists), song: existingSong };
             return;
         }
-        const currentOp: OpLog = {
+        const currentOp: QueueOpLog = {
+            type: 'queue',
             baseIdArray: allSongLists.queued.map(item => item.id),
             baseHash: getHash(allSongLists),
             song,
@@ -1006,7 +1047,54 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         notifyUpdate(roomId, finalHash);
     });
 
-    // 编辑当前歌曲信息（注意：会改变 singing 进而改变歌单 hash，当前未向 roomOpCache 写入版本日志）
+    // 编辑歌曲信息：按 songId 更新标题或链接，并写入 editSong 日志
+    router.post('/api/editSong', async (koaCtx) => {
+        const { roomId: roomIds } = koaCtx.query;
+        const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const roomIdError = validateRoomId(roomId);
+        if (!roomId || roomIdError) return koaCtx.body = { success: false, msg: roomIdError };
+
+        const { songId, patch } = (koaCtx.request.body || {}) as {
+            songId: string;
+            patch: SongPatch;
+        };
+        const songIdError = validateSongId(songId);
+        if (songIdError) return koaCtx.body = { success: false, msg: songIdError };
+        if (!patch || typeof patch !== 'object' || Array.isArray(patch)
+            || (patch.title === undefined && patch.url === undefined)) {
+            return koaCtx.body = { success: false, msg: '请填写要修改的歌曲名称或链接' };
+        }
+        const changes: SongPatch = {};
+        if (patch.title !== undefined) {
+            const titleError = validateSongTitle(patch.title);
+            if (titleError) return koaCtx.body = { success: false, msg: titleError };
+            changes.title = patch.title;
+        }
+
+        // 确保房间存在，防止对不存在的房间写入数据
+        const loaded = await ensureRoom(roomId);
+        if (!loaded) return koaCtx.body = { success: false, msg: '房间不存在' };
+        // 修改链接时走 prepareSong 归一化并解析 B 站分 P
+        if (patch.url !== undefined) {
+            if (typeof patch.url !== 'string' || !patch.url.trim()) {
+                return koaCtx.body = { success: false, msg: '歌曲链接不能为空' };
+            }
+            const song = findRoomSong(roomSongsCache[roomId] || loaded, songId);
+            if (!song) return koaCtx.body = { success: false, code: 'REJECT', msg: '歌曲已移除' };
+            const candidate = { ...song, ...changes, url: patch.url };
+            const songError = await prepareSong(candidate);
+            if (songError) return koaCtx.body = { success: false, msg: songError };
+            changes.url = candidate.url;
+        }
+
+        // await 恢复后重取当前内存歌单并再次确认歌曲还在，后续更新在同步段内完成
+        const lists = roomSongsCache[roomId] || loaded;
+        const song = findRoomSong(lists, songId);
+        if (!song) return koaCtx.body = { success: false, code: 'REJECT', msg: '歌曲已移除' };
+        koaCtx.body = await saveRoomSongEdit(roomId, lists, song, changes, getHash(lists));
+    });
+
+    // TODO(legacy-song-edit) 客户端迁移到 /api/editSong 后，删除旧入口。
     router.post('/api/editCurrentSong', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
@@ -1064,7 +1152,8 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         const serverHash = getHash(allSongLists);
         const alreadyHad = allSongLists.queued.some(s => s.id === song.id)
 
-        const currentOp: OpLog = {
+        const currentOp: QueueOpLog = {
+            type: 'queue',
             // 这是提前配置好了操作
             baseIdArray: queueSongList.map(s => s.id),
             baseHash: serverHash,

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { BilibiliSearchVideo, BilibiliVideoPart, DATABASE_NAME, OpLog, Song, SongLists } from "@/types";
+import { BilibiliSearchVideo, BilibiliVideoPart, DATABASE_NAME, OpLog, QueueOpLog, Song, SongLists } from "@/types";
 import ktvLogger from "@/logger";
 import * as crypto from 'crypto';
 import { Storage } from "@/storage";
@@ -650,10 +650,10 @@ async function resolveBilibiliData(inputUrl: string) {
  * 对歌曲进行变基操作，并返回最新歌曲列表顺序
  * @param nowSongs  后端当前歌曲集合
  * @param baseSongIdArray   base歌曲排列顺序
- * @param ops   后端从base开始执行的操作(不包括生成base)，index是移动后该元素的index
+ * @param ops   后端从base开始执行的操作(含 queue 队列操作与 editSong 编辑记录)，index是移动后该元素的index
  * @param nowOp 当前操作(基于base baseSongIdArray)，index是移动后该元素的index
  */
-function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[], nowOp: OpLog): Song[] {
+function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[], nowOp: QueueOpLog): Song[] {
     ktvLogger.trace({ baseSongIdArray, ops, nowOp })
     /*
     实现逻辑：首先构造双向链表
@@ -762,14 +762,23 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         nowSongs.forEach(s => s && s.id && latestSongMap.set(s.id, s));
     }
 
-    // 把操作按照时间由远到近排序(时间戳升序)
-    const sortedOps: OpLog[] = [...ops].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    [...sortedOps, nowOp].forEach(op => {
-        if (op?.song?.id && op.toIndex !== -1) {
-            // 更新这段操作时的歌曲
-            latestSongMap.set(op.song.id, op.song);
+    // 按时间升序整理日志：editSong 只更新仍在待唱队列中的歌曲，queue 操作进入链表重放
+    const sortedOps = [...ops].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const queueOps: QueueOpLog[] = [];
+    for (const op of sortedOps) {
+        if (op.type === 'editSong') {
+            const song = latestSongMap.get(op.songId);
+            if (song) latestSongMap.set(op.songId, { ...song, ...op.patch });
+        } else {
+            queueOps.push(op);
+            if (op.toIndex !== -1) latestSongMap.set(op.song.id, op.song);
         }
-    });
+    }
+
+    if (nowOp.toIndex !== -1) {
+        // TODO(queue-song-edit) 旧拖动带整首 Song，可能覆盖已编辑的标题或链接。等确定待唱编辑协议后处理。
+        latestSongMap.set(nowOp.song.id, nowOp.song);
+    }
 
     // 这样latestSongMap已经存有所有涉及到歌曲的最新状态
 
@@ -813,11 +822,10 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         }
     }
     // 到这里已经初始化完成
-    // 阶段一：重放历史 sortedOps（按当时落盘的 baseIdArray 与结果下标还原状态）
-    for (let i = 0; i < sortedOps.length; i++) {
-        const lastArray: string[] = sortedOps.at(i).baseIdArray;
-        const toIndex: number = sortedOps.at(i).toIndex;
-        const opId = sortedOps.at(i).song.id;
+    // 阶段一：按日志里的 baseIdArray 与结果下标还原队列状态
+    for (const op of queueOps) {
+        const { baseIdArray: lastArray, toIndex } = op;
+        const opId = op.song.id;
         let opNode = idNodes.get(opId);
         if (!opNode) {
             opNode = new ListNode(opId);
@@ -832,15 +840,21 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         }
 
         // 获取插入位置的前一个元素
-        const toSongNext: ListNode = toIndex === 0
-            ? head
-            : idNodes.get(lastArray.filter(s => s !== opId).at(toIndex - 1));
+        let insertAfter = head;
+        if (toIndex !== 0) {
+            const previousId = lastArray.filter(s => s !== opId).at(toIndex - 1);
+            const previousNode = previousId === undefined ? undefined : idNodes.get(previousId);
+            if (!previousNode) throw new Error(`Missing predecessor for queue history index ${toIndex}`);
+            insertAfter = previousNode;
+        }
         // 如果本身在链表中，先断开连接
         if (opNode.prev) opNode.prev.next = opNode.next;
         if (opNode.next) opNode.next.prev = opNode.prev;
         // 新连接
-        [opNode.next, opNode.prev] = [toSongNext.next, toSongNext];
-        [toSongNext.next.prev, toSongNext.next] = [opNode, opNode];
+        const next = insertAfter.next;
+        if (!next) throw new Error(`Missing successor for queue history index ${toIndex}`);
+        [opNode.next, opNode.prev] = [next, insertAfter];
+        [next.prev, insertAfter.next] = [opNode, opNode];
 
     }
 
@@ -867,9 +881,6 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
     const baseIndex = baseSongIdArray.indexOf(opId)
     const finalIndex = toIndex == -1 ? -1 :
         baseIndex === -1 || toIndex < baseIndex ? toIndex : toIndex + 1
-    const insertNumberNode = numberNodes.get(finalIndex)
-
-
     let opNode = idNodes.get(opId);
     if (!opNode) {
         opNode = new ListNode(opId);
@@ -880,6 +891,8 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         if (opNode.next) opNode.next.prev = opNode.prev;
         opNode.prev = opNode.next = null;
     } else {
+        const insertNumberNode = numberNodes.get(finalIndex);
+        if (!insertNumberNode) throw new Error(`Missing anchor for queue index ${finalIndex}`);
         // 断开
         if (opNode.prev) opNode.prev.next = opNode.next;
         if (opNode.next) opNode.next.prev = opNode.prev;

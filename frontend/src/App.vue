@@ -75,7 +75,7 @@ const cfg = ref({
 // api接口
 const lastHash = ref(EMPTY_HASH);
 const commitApiUrl = "api/songOperation"
-const editCurrentSongUrl = "api/editCurrentSong"
+const editSongUrl = "api/editSong"
 const addSongUrl = "api/addSong"
 const loadSongListUrl = "api/songListInfo"
 const nextSongUrl = "api/nextSong"
@@ -406,7 +406,9 @@ const commitOp = async (opData, apiUrl = commitApiUrl) => {
 
     try {
         const res = await fetch(`${apiUrl}?roomId=${roomId.value}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            // editSong 只传 { songId, patch }，其余操作沿用 songOperation 的 { idArrayHash, toIndex, song } 格式
+            body: JSON.stringify(apiUrl === editSongUrl ? opData : {
                 idArrayHash: lastHash.value,
                 toIndex: opData.toIndex, song: cleanSong
             })
@@ -1017,37 +1019,33 @@ const handleRefresh = async () => {
 const saveEdit = async (updatedData) => {
     if (savingEdit.value || !updatedData || !updatedData.title || !updatedData.url) return;
 
-    let song = editingSong.value;
+    const song = editingSong.value;
     if (!song) return;
-    if (isEditingCurrentSong.value) {
-        if (singing.value?.id !== song.id) {
-            showToast('当前歌曲已切换');
-            requestSync();
-            return;
-        }
-        song = singing.value;
-    }
-    const index = queued.value.findIndex(s => s.id === song.id);
-    const oldData = { title: song.title, url: song.url };
-
-    // 乐观更新UI
-    song.title = updatedData.title;
-    song.url = updatedData.url;
     savingEdit.value = true;
 
     try {
-        let success = true;
         if (isEditingCurrentSong.value) {
-            success = await commitOp({ song }, editCurrentSongUrl);
-        } else if (index !== -1) {
-            success = await commitOp({ song, toIndex: index });
+            // 当前歌曲改用 /api/editSong，仅传实际修改的字段，避免并发改标题和链接互相覆盖
+            const patch = {};
+            for (const field of ['title', 'url']) {
+                if (updatedData[field] !== editForm.value[field]) patch[field] = updatedData[field];
+            }
+            if (Object.keys(patch).length === 0 || await commitOp({ songId: song.id, patch }, editSongUrl)) {
+                editingSong.value = null;
+            }
+            return;
         }
-        if (!success) {
-            // 失败回退
+
+        // 待唱歌曲暂沿用 /api/songOperation，失败时回退本地修改
+        const index = queued.value.findIndex(s => s.id === song.id);
+        const oldData = { title: song.title, url: song.url };
+        song.title = updatedData.title;
+        song.url = updatedData.url;
+        if (index !== -1 && !await commitOp({ song, toIndex: index })) {
             song.title = oldData.title;
             song.url = oldData.url;
         }
-        if (success || !isEditingCurrentSong.value) editingSong.value = null;
+        editingSong.value = null;
     } finally {
         savingEdit.value = false;
     }
