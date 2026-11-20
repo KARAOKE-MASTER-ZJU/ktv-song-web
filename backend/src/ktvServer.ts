@@ -552,10 +552,10 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         // 按调用方当时所见队列的队首（baseIdArray[0]）切歌，支持投屏端等在未完成全量同步时乐观切歌
         const nextSong = currentQueue.find(s => s.id === baseIdArray[0]);
         if (!nextSong) return koaCtx.body = { success: false, code: 'REJECT' };
-        // 注意：此处当前写入了请求/回溯的 baseIdArray 与 idArrayHash，而非执行前服务端快照（nowIdArray / serverHash），与 /api/songOperation 不一致
+        // 记录执行前的服务端快照，供后续请求变基。
         const currentOp: OpLog = {
-            baseIdArray: baseIdArray,
-            baseHash: idArrayHash,
+            baseIdArray: nowIdArray,
+            baseHash: serverHash,
             song: nextSong,
             toIndex: toIndex,
             timestamp: Date.now()
@@ -740,10 +740,10 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             return;
         }
 
-        // 注意：此处当前写入了请求/回溯的 baseIdArray 与 idArrayHash，而非执行前服务端快照（nowIdArray / serverHash），与 /api/songOperation 不一致
+        // 记录执行前的服务端快照，供后续请求变基。
         const currentOp: OpLog = {
-            baseIdArray: baseIdArray,
-            baseHash: idArrayHash,
+            baseIdArray: nowIdArray,
+            baseHash: serverHash,
             song: targetSong,
             toIndex: 0,
             timestamp: Date.now()

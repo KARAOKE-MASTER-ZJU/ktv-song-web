@@ -10,8 +10,8 @@
 - Duration env vars may use `ms`, `s`, `m`, `h`, or `d` suffixes; prefer readable forms like `5m`, `1h`, and `24h` in compose/docs.
 - Update `readme.md` whenever startup steps, cache behavior, or search integration behavior changes.
 - Avoid broad refactors; keep edits focused on the requested feature or fix.
-- 队列变基（`backend/src/utils.ts` `songOperation`）采用基于 `S_0` 的**固定空位标尺模型**（`numberNodes`）：当前请求按空位锚点落位，不跟随其他歌曲移动而联动；历史 `laterOps` 重放则按各自 `baseIdArray` 与落盘后下标还原既定顺序。不要把空位锚点误改/误读成“跟随某首歌前后”。
-- 任何改变歌单 hash 的服务端操作都要留意对 `roomOpCache` 的影响；`OpLog` 的 `baseHash` 与 `baseIdArray` 语义及各路由当前差异见 `develop.md` 的「队列变基与操作日志」一节。
+- 队列变基（`backend/src/utils.ts` 的 `songOperation`）采用基于 `S_0` 的**固定空位标尺模型**（`numberNodes`）。当前请求按空位锚点落位，其他歌曲移动时锚点留在原处。重放历史队列操作时，用该条日志的 `baseIdArray` 和操作完成后的下标还原顺序。
+- 改动会改变歌单 hash 的服务端操作时，检查它是否需要写入 `roomOpCache`。日志字段与变基规则见 `develop.md` 的「队列变基与操作日志」。
 - 文档标题和正文只保留必要信息，不添加“跟进最新提交”等多余修饰或显而易见的用途说明。例如使用“源码部署”“更新”，不要写“从源码部署，跟进最新提交”；操作步骤中必要的命令和条件应保留。
 
 ## Project Idea

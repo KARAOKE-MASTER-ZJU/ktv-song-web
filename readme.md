@@ -171,4 +171,4 @@ pnpm start
 
 ## 开发与高级配置
 
-接口说明、缓存机制、环境变量、开发调试和镜像发布流程见 [develop.md](develop.md)。
+接口说明、缓存机制、环境变量、开发调试和镜像发布流程见 [develop.md](develop.md)。排查旧 hash 请求时见 [队列变基与操作日志](develop.md#队列变基与操作日志)。
