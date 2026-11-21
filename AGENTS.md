@@ -1,47 +1,52 @@
-# Repository Guidance
+# 仓库开发规范
 
-## Working Rules
+## 工程结构
 
-- Prefer Docker for all local development and debugging; do not run `npm install` or `pnpm install` on the host when the same task can be done with `docker compose`.
-- Use `docker compose up -d --build --force-recreate --remove-orphans` for rebuilds, and `docker compose logs -f <service>` for runtime checks.
-- Keep backend cache changes compatible with Redis TTL and existing `expireAt` payloads.
-- Preserve the current B站点歌 flow: frontend calls `/api/bilibiliSearch`, backend owns search/cache logic, and Redis stores persistent cache data.
-- B站跳转参数要区分平台：`bilibili://` 自定义协议用 `page` 且从 `0` 开始，网页端用 `p` 且从 `1` 开始；解析、生成、回写时都要兼容两种格式。
-- Duration env vars may use `ms`, `s`, `m`, `h`, or `d` suffixes; prefer readable forms like `5m`, `1h`, and `24h` in compose/docs.
-- Update `readme.md` whenever startup steps, cache behavior, or search integration behavior changes.
-- Avoid broad refactors; keep edits focused on the requested feature or fix.
-- 队列变基（`backend/src/utils.ts` 的 `songOperation`）采用基于 `S_0` 的**固定空位标尺模型**（`numberNodes`）。当前请求按空位锚点落位，其他歌曲移动时锚点留在原处。重放历史队列操作时，用该条日志的 `baseIdArray` 和操作完成后的下标还原顺序。
-- 改动会改变歌单 hash 的服务端操作时，检查它是否需要写入 `roomOpCache`。日志字段与变基规则见 `develop.md` 的「队列变基与操作日志」。
-- 文档标题和正文只保留必要信息，不添加“跟进最新提交”等多余修饰或显而易见的用途说明。例如使用“源码部署”“更新”，不要写“从源码部署，跟进最新提交”；操作步骤中必要的命令和条件应保留。
+- `frontend/` 使用 Vue 和 Vite，负责页面展示、用户交互和房间同步。
+- `backend/` 使用 TypeScript 和 Koa，负责房间、歌单、搜索和 WebSocket；实时房间数据与搜索缓存存入 Redis，历史房间存档存入 SQLite。
+- 根目录通过 pnpm workspace 管理前后端，关闭了共享锁文件，与 `frontend/`、`backend/` 各自维护 `pnpm-lock.yaml`。
 
-## Project Idea
+## 开发约定
 
-- This is a KTV song list management web app, with the main job of helping users search songs, queue songs, manage playback order, and keep the current room state synchronized.
-- The current重点 feature is B站点歌 integration: users search by keyword in the add-song flow, backend returns ranked candidates, and selected items feed back into click/popularity sorting.
-- Redis is the shared state/cache layer for song lists, search results, search catalogs, and other short-lived runtime data.
-- Docker/OrbStack is the intended development path, so future debugging should start from compose and container logs instead of rebuilding the host environment.
+- 改动聚焦当前需求，避免无关重构。
+- 新增或升级依赖时，通过包管理器核对当前稳定版，不凭记忆手填旧版本；检查 Node.js 与对等依赖兼容性后，再同步依赖声明和锁文件。确需使用旧版本时，须有经过验证的兼容性原因。
+- B 站点歌由前端请求 `/api/bilibiliSearch`，后端负责搜索并将缓存存入 Redis。B 站链接按平台区分分 P 参数：`bilibili://` 使用从 0 开始的 `page`，网页链接使用从 1 开始的 `p`；解析、生成和回写时都要兼容两种格式。
+- 修改缓存时，兼容 Redis TTL 和旧数据里的 `expireAt` 字段。时长配置支持 `ms`、`s`、`m`、`h`、`d` 后缀，配置和文档优先写成 `5m`、`1h`、`24h` 等易读形式。
+- 队列变基按基准版本 `S_0` 的固定空位锚点落位，重放历史操作时用每条日志的 `baseIdArray` 和执行后的 `toIndex` 还原顺序。服务端操作若会改变歌单 hash，改动时检查是否需要写入 `roomOpCache`。细节见 [队列变基与操作日志](develop.md#队列变基与操作日志)。
+- 涉及投屏控制或状态同步时，按 [遥控接口协议](docs/REMOTE.md) 检查与现有执行端的兼容性。
 
-## Key Files
+## UI 设计原则
 
-- `readme.md`: canonical startup guide, Docker debug workflow, and B站搜索/Redis cache behavior.
-- `docker-compose.yml`: local compose wiring for backend, frontend, and Redis; also the best place to inspect runtime env defaults.
-- `package.json`: repo-level scripts for `dev`, `build`, and Docker helpers.
-- `backend/src/index.ts`: backend entry/bootstrap point.
-- `backend/src/ktvServer.ts`: core backend business logic and HTTP routes, including B站搜索相关接口。
-- `backend/src/storage.ts`: Redis access layer and cache compatibility logic.
-- `backend/src/types.ts`: shared backend types.
-- `backend/src/utils.ts` / `backend/src/logger.ts`: utility helpers and logging.
-- `backend/src/songOperation.test.ts` / `backend/src/switchSong.test.ts`: existing backend behavior tests.
-- `frontend/src/main.js`: frontend bootstrap.
-- `frontend/src/App.vue` / `frontend/src/AppEntry.vue`: app shell and top-level rendering.
-- `frontend/src/Home.vue`: main KTV page entry.
-- `frontend/src/modals/AddSongModal.vue`: add-song flow, including B站搜索入口.
-- `frontend/src/modals/*.vue`: queue/history/favorites/settings and other UI dialogs.
-- `frontend/src/router/index.js`: route setup.
-- `backend/Dockerfile` / `frontend/Dockerfile`: image build logic; check these before changing local debug assumptions.
+- 不添加不必要的副标题、辅助说明或重复文案；界面文字只保留能提供新信息、帮助理解或操作的内容。
+- 优先通过视觉层级、分组、间距和清晰的控件名称表达结构与功能；布局不清时先改布局，不用说明段落补救。
+- 保留必要标签、无障碍支持、输入约束、错误提示和重要操作确认，不以精简为由降低可用性。
 
-## Quick Context Restore
+## 文档与输出
 
-- If you need to resume quickly, read `AGENTS.md` first, then `readme.md`, then inspect `backend/src/ktvServer.ts`, `backend/src/storage.ts`, `frontend/src/modals/AddSongModal.vue`, and `docker-compose.yml`.
-- The current exposed ports are backend `5823` and frontend `5526`.
-- The user asked to skip container-internal tests, so prefer build/log verification with Docker instead of adding host dependencies.
+- 文档、说明和界面文案使用中文，命令、路径和技术名称保留原文。
+- [readme.md](readme.md) 面向使用者，说明使用和部署方式；启动步骤、缓存行为或 B 站搜索集成变化时同步更新。
+- [develop.md](develop.md) 记录开发者需要的环境、调试、测试、构建、发布及核心机制说明。标题直说用途，正文保留读者操作或判断所需的说明、条件与命令。
+- 写入文档前，先判断读者是否需要据此操作或作决定；不要把排查流水账或复述代码现状的内容塞进文档，完成某项功能或排查不构成新增文档的理由。
+
+## 问题排查与工作区隔离
+
+- 要求排查问题、定位原因或诊断时，默认交付原因、复现证据、影响范围和修复建议。
+- 只读分析可直接在原工作区进行，包括阅读代码、查看差异、检查已有日志和测试结果，无须新建 worktree。
+- 排查期间如需改代码、加日志、做临时修复，或运行会生成文件、改变工作区状态的复现、构建和测试，使用独立 Git worktree，将诊断改动与产物留在其中。
+- 隔离前先确认原工作区已有改动；需要复现未提交内容时，只把所需文件复制到排查 worktree，保持原工作区的文件、索引和分支状态不变，不得擅自提交、stash、清理或覆盖用户改动。
+- 排查结束后先报告结论和证据，获得明确授权后再把修复带回原工作区。
+- 无法创建 worktree 或无法隔离操作时，继续只读分析并说明限制；需要写入原工作区时须先获明确授权。
+
+## 测试与检查
+
+- 修改工程配置或依赖后，按影响范围运行构建与检查；前后端一起构建使用 `pnpm build`。
+- 优先运行已有测试。行为变化影响现有用例时，只做必要适配，保留原用例保护的规则，不顺手扩充只服务于本次改动的验证用例。
+- 只为确认本次改动生效的验证，不写入长期测试集；改用现有检查、手动操作或临时脚本，临时脚本放在仓库外或排查 worktree。
+- 新增长期测试前，先说清它保护的业务规则、接口契约或回归风险，以及未来哪类错误改动会被它发现。仅复述当前实现或证明刚写的代码能运行，不构成保留测试的理由。
+- 不把实现层的策略参数当成业务规则写死在测试里，除非该数值本身是明确的业务要求或接口契约。
+
+## 授权边界
+
+- 未经明确授权，不擅自改动工作区文件；代码修改与测试的授权仅限于本地工作区。
+- 提交、改写历史、推送、创建或合并 PR、发布 Release、部署，以及向远端发表评论或审查结果，须分别就操作和目标获得明确授权。
+- 解决本地合并冲突时，可编辑冲突文件并更新索引；主动发起本地合并应加 `--no-commit`，经明确授权后再创建合并提交。
