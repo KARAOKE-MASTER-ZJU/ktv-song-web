@@ -25,15 +25,15 @@
         "http-proxy-middleware": "^3.0.7"
     },
     "devDependencies": {
-        "@tailwindcss/postcss": "^4.3.3",
-        "@vitejs/plugin-vue": "^6.0.8",
-        "autoprefixer": "^10.5.4",
-        "js-sha256": "^0.11.1",
-        "postcss": "^8.5.23",
-        "tailwindcss": "^4.3.3",
-        "vite": "^7.3.6",
-        "vue": "^3.5.40",
-        "vue-router": "^4.6.4",
+        "@tailwindcss/postcss": "^4.3.5",
+        "@vitejs/plugin-vue": "^6.0.11",
+        "autoprefixer": "^10.7.0",
+        "js-sha256": "^1.1.0",
+        "postcss": "^8.5.33",
+        "tailwindcss": "^4.3.5",
+        "vite": "^8.3.8",
+        "vue": "^3.5.45",
+        "vue-router": "^5.5.1",
         "vuedraggable": "^4.1.0"
     }
 }
