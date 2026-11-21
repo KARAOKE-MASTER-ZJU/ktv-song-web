@@ -12,7 +12,7 @@
         "ktv"
     ],
     "author": "",
-    "packageManager": "pnpm@11.20.0",
+    "packageManager": "pnpm@11.28.13",
     "scripts": {
         "dev": "vite",
         "build": "vite build",
@@ -20,9 +20,9 @@
         "start": "node start-frontend.cjs"
     },
     "dependencies": {
-        "dotenv": "^17.4.2",
-        "express": "^5.2.1",
-        "http-proxy-middleware": "^3.0.7"
+        "dotenv": "^18.0.10",
+        "express": "^5.3.0",
+        "http-proxy-middleware": "^3.0.11"
     },
     "devDependencies": {
         "@tailwindcss/postcss": "^4.3.5",

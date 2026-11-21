@@ -28,7 +28,7 @@ jobs:
 
         strategy:
             matrix:
-                # pnpm 11.20 要求 Node >= 22.13，且 Node 20 已弃用；生产镜像用 node:22，故只测 22.x
+                # pnpm 11.28 要求 Node >= 22.13，且 Node 20 已弃用；生产镜像用 node:22，故只测 22.x
                 node-version: [ 22.x ]
 
         steps:

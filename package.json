@@ -10,7 +10,7 @@
         "ktv"
     ],
     "author": "",
-    "packageManager": "pnpm@11.20.0",
+    "packageManager": "pnpm@11.28.13",
     "scripts": {
         "dev": "pnpm -r --parallel dev",
         "dev:backend": "pnpm --filter ./backend dev",

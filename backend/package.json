@@ -12,7 +12,7 @@
         "ktv"
     ],
     "author": "",
-    "packageManager": "pnpm@11.20.0",
+    "packageManager": "pnpm@11.28.13",
     "scripts": {
         "test": "cross-env DEBUG_MODE=error NODE_ENV=production jest",
         "dev-watch": "cross-env NODE_ENV=development tsx watch ./src/index.ts",
@@ -22,13 +22,13 @@
         "build": "node build.mjs"
     },
     "dependencies": {
-        "@koa/router": "^15.7.0",
-        "axios": "^1.18.1",
+        "@koa/router": "^15.7.1",
+        "axios": "^1.21.1",
         "dotenv": "^18.0.10",
-        "koa": "^3.2.1",
+        "koa": "^3.3.0",
         "koa-bodyparser": "^4.4.1",
         "koa-websocket": "^7.0.0",
-        "lru-cache": "^11.5.2",
+        "lru-cache": "^11.5.3",
         "redis": "^6.3.1"
     },
     "devDependencies": {

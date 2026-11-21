@@ -129,7 +129,7 @@ docker compose up -d --force-recreate --remove-orphans
 准备 Git、Node.js（22 或 24，使用对应版本的最新补丁）和 Redis，并启动 Redis。安装项目指定版本的 pnpm：
 
 ```shell
-npm install -g pnpm@11.20.0
+npm install -g pnpm@11.28.13
 ```
 
 下载源码并构建：
