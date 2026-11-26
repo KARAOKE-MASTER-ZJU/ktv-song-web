@@ -9,7 +9,7 @@ defineProps({
     absoluteVolume: { type: Boolean, default: true },
     disabled: Boolean
 });
-defineEmits(['update:modelValue', 'change', 'increase', 'decrease']);
+defineEmits(['update:modelValue', 'change', 'cancel', 'increase', 'decrease']);
 </script>
 
 <template>
@@ -26,7 +26,8 @@ defineEmits(['update:modelValue', 'change', 'increase', 'decrease']);
             <ControlRange v-if="absoluteVolume" :model-value="modelValue ?? 0" label="音量"
                           :disabled="disabled || modelValue === null"
                           :value-text="modelValue === null ? '未知' : `${modelValue}%`"
-                          @update:model-value="$emit('update:modelValue', $event)" @change="$emit('change', $event)" />
+                          @update:model-value="$emit('update:modelValue', $event)" @change="$emit('change', $event)"
+                          @pointercancel="$emit('cancel')" @blur="$emit('cancel')" />
             <span v-else class="remote-volume-relative">音量</span>
             <ComfirmButton type="secondary" class="remote-step-button" aria-label="提高音量"
                            :disabled="disabled" @click="$emit('increase')">

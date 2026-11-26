@@ -19,15 +19,22 @@ const emit = defineEmits(['refresh-apps', 'previous', 'next', 'command']);
 const REMOTE_APP_STORAGE_KEY = 'ktv_remote_app';
 // 命令先到、快照后到时，按钮先按意图显示。
 const PLAY_INTENT_TIMEOUT = 6000;
+const VOLUME_STEP_DELAY = 200;
+const VOLUME_SYNC_DELAY = 1500;
 
 const selectedAppId = defineModel('appId', { type: String, default: '' });
 // Explicit choice stays separate from the fallback shown while that app is offline.
 const preferredAppId = ref('');
-const volume = ref(null);
+const volumeDraft = ref(null);
+const volumeIntent = ref(null);
 const quality = ref('');
 const playIntent = ref(null);
 
 const capabilities = computed(() => props.playback.capabilities ?? {});
+const reportedVolume = computed(() => typeof props.playback.volume === 'number' ? props.playback.volume : null);
+const volume = computed(() => volumeDraft.value ?? volumeIntent.value ?? reportedVolume.value);
+const selectedSessionId = computed(() => props.apps.find(app => app.id === selectedAppId.value)?.sessionId);
+const absoluteVolume = computed(() => capabilities.value.absoluteVolume !== false);
 // 与播放页一致：按取源方式分组，选项文本由前端拼上格式前缀。
 const qualityGroups = computed(() => {
     const groups = new Map();
@@ -65,6 +72,7 @@ const progressState = computed(() => ({ ...props.playback, isPlaying: isPlaying.
 const { position: progressPosition, setPosition: setProgressPosition } = usePlaybackProgress(progressState);
 
 let playIntentTimer = null;
+let volumeTimer = null;
 
 function readPreferredApp(roomId) {
     if (!roomId) return '';
@@ -105,7 +113,6 @@ watch(() => props.roomId, (roomId) => {
 
 watch(() => props.apps, syncSelection, { immediate: true, deep: true });
 watch(() => props.playback, (state) => {
-    volume.value = typeof state.volume === 'number' ? state.volume : null;
     quality.value = selectedQuality.value;
     // 快照与意图一致后交还状态。
     if (playIntent.value !== null && state.isPlaying === playIntent.value) {
@@ -114,7 +121,11 @@ watch(() => props.playback, (state) => {
     }
 }, { immediate: true, deep: true });
 
-onUnmounted(() => clearTimeout(playIntentTimer));
+watch([() => props.roomId, selectedAppId, selectedSessionId, absoluteVolume], resetVolume);
+onUnmounted(() => {
+    clearTimeout(playIntentTimer);
+    resetVolume();
+});
 
 // 命令只描述意图，执行结果由状态快照回来。
 function send(command, payload) {
@@ -142,15 +153,36 @@ function seekTo(seconds) {
     setProgressPosition(seconds);
     send('seek', { seconds });
 }
-function setVolume(value) {
-    if (typeof value !== 'number') return;
-    volume.value = value;
+function cancelVolumeDraft() {
+    volumeDraft.value = null;
+}
+function resetVolume() {
+    clearTimeout(volumeTimer);
+    cancelVolumeDraft();
+    volumeIntent.value = null;
+}
+function sendVolume(value) {
+    clearTimeout(volumeTimer);
+    if (controlsDisabled.value || !absoluteVolume.value) return;
+    volumeIntent.value = value;
+    // 设备的中间回包和轮询都可能读到旧值，保护期结束后再显示最新快照。
+    volumeTimer = setTimeout(() => { volumeIntent.value = null; }, VOLUME_SYNC_DELAY);
     send('setVolume', { volume: value });
 }
-// 支持绝对音量时按 5 调整，否则用相对指令。
+function setVolume(value) {
+    if (volumeDraft.value === null) return;
+    cancelVolumeDraft();
+    sendVolume(value);
+}
+// 支持绝对音量时按 5 累加，连点只发最后的目标值。
 function stepVolume(delta) {
-    if (capabilities.value.absoluteVolume !== false && typeof volume.value === 'number') {
-        setVolume(Math.min(100, Math.max(0, volume.value + delta)));
+    if (controlsDisabled.value) return;
+    if (absoluteVolume.value && volume.value !== null) {
+        const target = Math.min(100, Math.max(0, volume.value + delta));
+        cancelVolumeDraft();
+        volumeIntent.value = target;
+        clearTimeout(volumeTimer);
+        volumeTimer = setTimeout(() => sendVolume(target), VOLUME_STEP_DELAY);
         return;
     }
     send('changeVolume', { increase: delta > 0 });
@@ -179,8 +211,9 @@ function setQuality(value) {
                             :disabled="controlsDisabled"
                             @previous="previousSong" @toggle-playback="togglePlayback" @next="nextSong" @seek="seekTo"
                             @recast="recastCurrentSong" />
-            <RemoteVolume v-model="volume" :absolute-volume="capabilities.absoluteVolume !== false"
+            <RemoteVolume :model-value="volume" :absolute-volume="absoluteVolume"
                           :disabled="controlsDisabled"
+                          @update:model-value="volumeDraft = $event" @cancel="cancelVolumeDraft"
                           @change="setVolume" @increase="increaseVolume" @decrease="decreaseVolume" />
             <RemoteDisplaySettings :quality="quality" :quality-groups="qualityGroups"
                                    :disabled="controlsDisabled || capabilities.quality === false"
