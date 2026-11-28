@@ -6,7 +6,7 @@ import { Storage } from "@/storage";
 
 const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const BILIBILI_REFERER = 'https://www.bilibili.com/';
-const BILIBILI_SHORT_HOST = 'b23.tv';
+const BILIBILI_SHORT_HOSTS = new Set(['b23.tv', 'bili2233.cn']);
 
 function parseHttpUrl(inputUrl: string): URL | null {
     const trimmed = inputUrl.trim();
@@ -23,7 +23,7 @@ function parseHttpUrl(inputUrl: string): URL | null {
 
 function isBilibiliHost(hostname: string) {
     const normalizedHostname = hostname.toLowerCase();
-    return normalizedHostname === BILIBILI_SHORT_HOST
+    return BILIBILI_SHORT_HOSTS.has(normalizedHostname)
         || normalizedHostname === 'bilibili.com'
         || normalizedHostname.endsWith('.bilibili.com');
 }
@@ -559,7 +559,7 @@ function resolveBilibiliBangumi(urlObj: URL) {
     return null;
 }
 
-/** 解析 B 站视频、番剧及 B23.TV 分享链接。 */
+/** 解析 B 站视频、番剧及分享短链。 */
 async function resolveBilibiliData(inputUrl: string) {
     // If it's already our internal protocol, just normalize and preserve page.
     if (inputUrl.startsWith('bilibili://')) {
@@ -591,7 +591,7 @@ async function resolveBilibiliData(inputUrl: string) {
     if (!parsedInputUrl || !isBilibiliHost(parsedInputUrl.hostname)) return null;
 
     let targetUrl = parsedInputUrl.href;
-    if (parsedInputUrl.hostname.toLowerCase() === BILIBILI_SHORT_HOST) {
+    if (BILIBILI_SHORT_HOSTS.has(parsedInputUrl.hostname.toLowerCase())) {
         const getRedirectTarget = (location: unknown) => {
             if (typeof location !== 'string' || !location) return parsedInputUrl.href;
             try {

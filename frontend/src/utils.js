@@ -1,5 +1,19 @@
 import { sha256 } from "js-sha256";
 
+const BILIBILI_SHORT_HOSTS = new Set(['b23.tv', 'bili2233.cn']);
+
+const isBilibiliWebUrl = (url) =>
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    (url.hostname === 'bilibili.com' || url.hostname.endsWith('.bilibili.com') || BILIBILI_SHORT_HOSTS.has(url.hostname));
+
+const isBilibiliWebLink = (link) => {
+    try {
+        return isBilibiliWebUrl(new URL(/^https?:\/\//i.test(link) ? link : `https://${link}`));
+    } catch {
+        return false;
+    }
+};
+
 export const createUUId = () => {
     // randomUUID依赖安全上下文
     const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -124,7 +138,7 @@ export function initUtils(lastHash){
 
     const parseBilibiliShortLink = async (link) => {
         if (!link) return;
-        if (link.startsWith('bilibili://') || link.includes('b23.tv') || link.includes('bilibili.com') || link.match(/BV[a-zA-Z0-9]{10}/i)) {
+        if (link.startsWith('bilibili://') || isBilibiliWebLink(link) || link.match(/BV[a-zA-Z0-9]{10}/i)) {
             try {
                 const res = await fetch(`api/parseLink`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
@@ -146,7 +160,7 @@ export function initUtils(lastHash){
         if (!raw) return;
 
         // 提取链接
-        const urlMatch = raw.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:bilibili\.com|b23\.tv)\/[^\s<>"'【】]+|bilibili:\/\/[^\s<>"'【】]+/i);
+        const urlMatch = raw.match(/https?:\/\/(?:(?:[a-zA-Z0-9-]+\.)?bilibili\.com|b23\.tv|bili2233\.cn)\/[^\s<>"'【】]+|bilibili:\/\/[^\s<>"'【】]+/i);
 
         if (urlMatch) form.url = urlMatch[0];
 
@@ -168,8 +182,7 @@ export function initUtils(lastHash){
                     bangumiId = (epMatch || ssMatch)[1];
                     bangumiType = epMatch ? 'ep' : 'ss';
                 }
-            } else if (['http:', 'https:'].includes(parsedUrl.protocol) &&
-                (parsedUrl.hostname === 'bilibili.com' || parsedUrl.hostname.endsWith('.bilibili.com') || parsedUrl.hostname === 'b23.tv')) {
+            } else if (isBilibiliWebUrl(parsedUrl)) {
                 const match = parsedUrl.pathname.match(/^\/(?:bangumi\/play\/)?(ep|ss)([1-9]\d*)\/?$/);
                 if (match) {
                     bangumiType = match[1];
