@@ -1,6 +1,6 @@
 import { sha256 } from "js-sha256";
 
-const BILIBILI_SHORT_HOSTS = new Set(['b23.tv', 'bili2233.cn']);
+const BILIBILI_SHORT_HOSTS = new Set(['b23.tv', 'bili22.cn', 'bili23.cn', 'bili33.cn', 'bili2233.cn']);
 
 const isBilibiliWebUrl = (url) =>
     (url.protocol === 'http:' || url.protocol === 'https:') &&
@@ -160,7 +160,7 @@ export function initUtils(lastHash){
         if (!raw) return;
 
         // 提取链接
-        const urlMatch = raw.match(/https?:\/\/(?:(?:[a-zA-Z0-9-]+\.)?bilibili\.com|b23\.tv|bili2233\.cn)\/[^\s<>"'【】]+|bilibili:\/\/[^\s<>"'【】]+/i);
+        const urlMatch = raw.match(/https?:\/\/(?:(?:[a-zA-Z0-9-]+\.)?bilibili\.com|b23\.tv|bili(?:22|23|33|2233)\.cn)\/[^\s<>"'【】]+|bilibili:\/\/[^\s<>"'【】]+/i);
 
         if (urlMatch) form.url = urlMatch[0];
 

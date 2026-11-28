@@ -3,6 +3,9 @@ import { isBilibiliUrl } from '@/utils';
 describe('isBilibiliUrl', () => {
     test('接受 B 站网页和短链域名', () => {
         expect(isBilibiliUrl('https://b23.tv/abc123')).toBe(true);
+        expect(isBilibiliUrl('https://bili22.cn/abc123')).toBe(true);
+        expect(isBilibiliUrl('https://bili23.cn/abc123')).toBe(true);
+        expect(isBilibiliUrl('https://bili33.cn/abc123')).toBe(true);
         expect(isBilibiliUrl('https://bili2233.cn/abc123')).toBe(true);
         expect(isBilibiliUrl('https://www.bilibili.com/video/BV1xx411c7mD')).toBe(true);
         expect(isBilibiliUrl('https://m.bilibili.com/video/BV1xx411c7mD')).toBe(true);

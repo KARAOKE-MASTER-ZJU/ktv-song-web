@@ -6,7 +6,7 @@ import { Storage } from "@/storage";
 
 const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const BILIBILI_REFERER = 'https://www.bilibili.com/';
-const BILIBILI_SHORT_HOSTS = new Set(['b23.tv', 'bili2233.cn']);
+const BILIBILI_SHORT_HOSTS = new Set(['b23.tv', 'bili22.cn', 'bili23.cn', 'bili33.cn', 'bili2233.cn']);
 
 function parseHttpUrl(inputUrl: string): URL | null {
     const trimmed = inputUrl.trim();
